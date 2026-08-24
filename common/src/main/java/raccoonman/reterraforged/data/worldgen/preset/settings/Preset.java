@@ -10,7 +10,6 @@ import net.minecraft.data.worldgen.BootstrapContext;
 import net.minecraft.resources.ResourceKey;
 import net.minecraft.resources.RegistryDataLoader;
 import net.minecraft.world.level.levelgen.presets.WorldPreset;
-import net.minecraft.world.level.levelgen.presets.WorldPresets;
 
 import raccoonman.reterraforged.data.worldgen.compat.terrablender.TBNoiseRouterData;
 import raccoonman.reterraforged.data.worldgen.preset.PresetBiomeModifierData;
@@ -21,6 +20,7 @@ import raccoonman.reterraforged.data.worldgen.preset.PresetNoiseGeneratorSetting
 import raccoonman.reterraforged.data.worldgen.preset.PresetNoiseRouterData;
 import raccoonman.reterraforged.data.worldgen.preset.PresetPlacedFeatures;
 import raccoonman.reterraforged.data.worldgen.preset.PresetStructureRuleData;
+import raccoonman.reterraforged.data.worldgen.preset.PresetWorldPresets;
 import raccoonman.reterraforged.registries.RTFRegistries;
 import raccoonman.reterraforged.world.worldgen.biome.modifier.BiomeModifier;
 import raccoonman.reterraforged.world.worldgen.noise.module.Noise;
@@ -98,11 +98,7 @@ public record Preset(WorldSettings world, SurfaceSettings surface, CaveSettings 
 			TBNoiseRouterData.bootstrap(ctx);
 		});
 		this.addPatch(builder, Registries.NOISE_SETTINGS, PresetNoiseGeneratorSettings::bootstrap);
-		worldPresetKey.ifPresent(key -> {
-			WorldPreset normal = registries.registryOrThrow(Registries.WORLD_PRESET).getOrThrow(WorldPresets.NORMAL);
-			WorldPreset automatic = new WorldPreset(new LinkedHashMap<>(normal.createWorldDimensions().dimensions()));
-			this.addPatch(builder, Registries.WORLD_PRESET, (preset, ctx) -> ctx.register(key, automatic));
-		});
+		worldPresetKey.ifPresent(key -> this.addPatch(builder, Registries.WORLD_PRESET, (preset, ctx) -> PresetWorldPresets.bootstrap(preset, ctx, key)));
 
 		// 2. Initialize Cloner and Gatekeeper tracking
 		Cloner.Factory factory = new Cloner.Factory();
