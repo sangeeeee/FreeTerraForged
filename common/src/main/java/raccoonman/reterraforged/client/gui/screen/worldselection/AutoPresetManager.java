@@ -117,6 +117,12 @@ public final class AutoPresetManager {
 		}
 
 		State state = STATES.get(screen);
+		// Reloading datapacks initializes the same CreateWorldScreen again. Once
+		// this screen has been handled, preserve the user's explicit world-type
+		// selection instead of selecting the configured auto preset again.
+		if(state != null) {
+			return;
+		}
 		if(hasPackLoaded(screen) && selectAutoPreset(screen)) {
 			try {
 				stageCachedPack(screen);
@@ -126,10 +132,6 @@ public final class AutoPresetManager {
 			}
 			return;
 		}
-		if(state != null) {
-			return;
-		}
-
 		STATES.put(screen, State.APPLYING);
 		try {
 			validate(config);

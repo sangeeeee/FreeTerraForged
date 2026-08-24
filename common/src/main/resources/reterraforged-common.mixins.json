@@ -71,7 +71,6 @@
 		"client": [
 			"MixinCreateWorldScreenAutoPreset",
 			"MixinCreateWorldScreenWorldTab",
-			"MixinGuaranteeData",
 			"MixinWorldTypeEntry",
 			"ScreenInvoker"
 		],

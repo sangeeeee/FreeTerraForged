@@ -2,6 +2,7 @@ package raccoonman.reterraforged.client.gui.screen.presetconfig;
 
 import java.io.IOException;
 import java.nio.file.Path;
+import java.util.List;
 
 import net.minecraft.client.gui.components.AbstractWidget;
 import net.minecraft.client.gui.components.Renderable;
@@ -14,6 +15,8 @@ import net.minecraft.client.gui.screens.worldselection.WorldCreationContext;
 import net.minecraft.core.RegistryAccess;
 import net.minecraft.network.chat.Component;
 import net.minecraft.server.packs.repository.PackRepository;
+import net.minecraft.world.level.DataPackConfig;
+import net.minecraft.world.level.WorldDataConfiguration;
 import net.minecraft.world.level.levelgen.WorldOptions;
 import raccoonman.reterraforged.RTFCommon;
 import raccoonman.reterraforged.client.gui.screen.page.LinkedPageScreen;
@@ -22,11 +25,15 @@ import raccoonman.reterraforged.data.worldgen.PresetDatapackExporter;
 import raccoonman.reterraforged.data.worldgen.preset.settings.Preset;
 
 public class PresetConfigScreen extends LinkedPageScreen {
+	private static final String MANUAL_PRESET_PACK_FILE = "reterraforged-preset.zip";
+	private static final String MANUAL_PRESET_PACK_ID = "file/" + MANUAL_PRESET_PACK_FILE;
+
 	private CreateWorldScreen parent;
 	private final PreviewComputationCache previewCache = new PreviewComputationCache();
 	private String seed;
 	private boolean seedInitialized;
 	private boolean applySeedOnClose;
+	private boolean applyingPreset;
 
 	public PresetConfigScreen(CreateWorldScreen parent) {
 		this.parent = parent;
@@ -41,7 +48,11 @@ public class PresetConfigScreen extends LinkedPageScreen {
 			this.applySeedToParent();
 		}
 
-		this.minecraft.setScreen(this.parent);
+		// applyNewPackConfig has already installed vanilla's datapack-validation
+		// screen. Do not replace it with the parent until validation finishes.
+		if(!this.applyingPreset) {
+			this.minecraft.setScreen(this.parent);
+		}
 	}
 
 	PreviewComputationCache previewCache() {
@@ -90,15 +101,38 @@ public class PresetConfigScreen extends LinkedPageScreen {
 		this.parent.getUiState().setSeed(this.getSeed());
 	}
 
-	public void applyPreset(PresetEntry preset) throws IOException {		
+	public void applyPreset(PresetEntry preset) throws IOException {
 		Pair<Path, PackRepository> path = this.parent.getDataPackSelectionSettings(this.parent.getUiState().getSettings().dataConfiguration());
-		Path exportPath = path.getFirst().resolve("reterraforged-preset.zip");
+		if(path == null) {
+			throw new IOException("Could not create the temporary datapack directory");
+		}
+
+		Path exportPath = path.getFirst().resolve(MANUAL_PRESET_PACK_FILE);
 		this.exportAsDatapack(exportPath, preset);
 		PackRepository repository = path.getSecond();
 		repository.reload();
-		if(repository.addPack("file/" + exportPath.getFileName())) {
-			this.parent.tryApplyNewDataPacks(repository, false, (data) -> {
-			});
+		if(!repository.addPack(MANUAL_PRESET_PACK_ID)) {
+			throw new IOException("Exported preset datapack was not discovered as " + MANUAL_PRESET_PACK_ID);
+		}
+
+		List<String> enabled = List.copyOf(repository.getSelectedIds());
+		List<String> disabled = repository.getAvailableIds().stream().filter(id -> !enabled.contains(id)).toList();
+		WorldDataConfiguration current = this.parent.getUiState().getSettings().dataConfiguration();
+		WorldDataConfiguration requested = new WorldDataConfiguration(
+				new DataPackConfig(enabled, disabled),
+				current.enabledFeatures()
+		);
+
+		this.applyingPreset = true;
+		// This pack is overwritten under a stable ID. tryApplyNewDataPacks would
+		// skip the reload if that ID was already selected, despite changed contents.
+		// Force the vanilla asynchronous reload: it owns the validation screen and
+		// restores CreateWorldScreen only after the registries are fully ready.
+		try {
+			this.parent.applyNewPackConfig(repository, requested, ignored -> this.minecraft.setScreen(this.parent));
+		} catch(RuntimeException e) {
+			this.applyingPreset = false;
+			throw e;
 		}
 	}
 	
