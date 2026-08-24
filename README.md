@@ -41,5 +41,23 @@ To persist your edits between sessions please create or copy a preset to use as 
 
 ---
 
+### Use a preset as the default world type
+
+On first client startup, ReTerraForged creates `config/reterraforged/auto_preset.json`:
+
+```json
+{
+  "enabled": false,
+  "preset": "",
+  "worldTypeName": ""
+}
+```
+
+Place the referenced preset in `config/reterraforged/presets`, then enable it. For example, `"preset": "earth2.json"` and `"worldTypeName": "Earth 2"` add and select an `Earth 2` world type whenever the fresh world creation screen opens. The automatic world type is read-only; select the normal world type to use the existing Customize workflow.
+
+The generated datapack and its source/package hashes are stored in `config/reterraforged/cache`. The datapack is regenerated only when the configuration, preset, Minecraft version, mod version, or cached package changes. World seeds are not stored in this cache and remain random by default.
+
+---
+
 # Bugs
 - Any issues encountered should be raised as Github issues with as much supporting documentation as you can provide, ideally latest.log and screenshots at a minimum.

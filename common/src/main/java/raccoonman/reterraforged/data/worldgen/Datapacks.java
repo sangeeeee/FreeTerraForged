@@ -14,10 +14,14 @@ import net.minecraft.data.DataGenerator;
 import net.minecraft.data.DataGenerator.PackGenerator;
 import net.minecraft.data.PackOutput;
 import net.minecraft.data.metadata.PackMetadataGenerator;
+import net.minecraft.data.tags.TagsProvider;
 import net.minecraft.data.worldgen.features.FeatureUtils;
 import net.minecraft.network.chat.Component;
+import net.minecraft.resources.ResourceKey;
 import net.minecraft.world.level.block.Blocks;
 import net.minecraft.resources.RegistryDataLoader;
+import net.minecraft.tags.WorldPresetTags;
+import net.minecraft.world.level.levelgen.presets.WorldPreset;
 import raccoonman.reterraforged.client.data.RTFTranslationKeys;
 import raccoonman.reterraforged.data.worldgen.preset.PresetConfiguredFeatures;
 import raccoonman.reterraforged.data.worldgen.preset.settings.Preset;
@@ -59,9 +63,19 @@ public class Datapacks {
 	}
 
 	public static DataGenerator makePreset(Preset preset, RegistryAccess registryAccess, Path dataGenPath, Path dataGenOutputPath, String presetName) {
+		return makePreset(preset, registryAccess, dataGenPath, dataGenOutputPath, presetName, null);
+	}
+
+	public static DataGenerator makeAutoPreset(Preset preset, RegistryAccess registryAccess, Path dataGenPath, Path dataGenOutputPath, String presetName, ResourceKey<WorldPreset> worldPresetKey) {
+		return makePreset(preset, registryAccess, dataGenPath, dataGenOutputPath, presetName, worldPresetKey);
+	}
+
+	private static DataGenerator makePreset(Preset preset, RegistryAccess registryAccess, Path dataGenPath, Path dataGenOutputPath, String presetName, ResourceKey<WorldPreset> worldPresetKey) {
 		DataGenerator dataGenerator = new DataGenerator(dataGenPath, SharedConstants.getCurrentVersion(), true);
 		PackGenerator packGenerator = dataGenerator.new PackGenerator(true, presetName, new PackOutput(dataGenOutputPath));
-		CompletableFuture<HolderLookup.Provider> lookup = CompletableFuture.supplyAsync(() -> preset.buildPatch(registryAccess));
+		CompletableFuture<HolderLookup.Provider> lookup = CompletableFuture.supplyAsync(() -> worldPresetKey == null
+				? preset.buildPatch(registryAccess)
+				: preset.buildPatch(registryAccess, worldPresetKey));
 		
 		packGenerator.addProvider((output) -> {
 			return DataGenUtil.createRegistryProvider(output, lookup);
@@ -75,6 +89,14 @@ public class Datapacks {
 		packGenerator.addProvider((output) -> {
 			return PackMetadataGenerator.forFeaturePack(output, Component.translatable(RTFTranslationKeys.PRESET_METADATA_DESCRIPTION));
 		});
+		if(worldPresetKey != null) {
+			packGenerator.addProvider((output) -> new TagsProvider<WorldPreset>(output, Registries.WORLD_PRESET, lookup) {
+				@Override
+				protected void addTags(HolderLookup.Provider provider) {
+					this.tag(WorldPresetTags.NORMAL).add(worldPresetKey);
+				}
+			});
+		}
 		return dataGenerator;
 	}
 }

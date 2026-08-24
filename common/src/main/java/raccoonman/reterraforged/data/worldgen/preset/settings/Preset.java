@@ -9,6 +9,8 @@ import net.minecraft.core.registries.Registries;
 import net.minecraft.data.worldgen.BootstrapContext;
 import net.minecraft.resources.ResourceKey;
 import net.minecraft.resources.RegistryDataLoader;
+import net.minecraft.world.level.levelgen.presets.WorldPreset;
+import net.minecraft.world.level.levelgen.presets.WorldPresets;
 
 import raccoonman.reterraforged.data.worldgen.compat.terrablender.TBNoiseRouterData;
 import raccoonman.reterraforged.data.worldgen.preset.PresetBiomeModifierData;
@@ -58,11 +60,15 @@ public record Preset(WorldSettings world, SurfaceSettings surface, CaveSettings 
 	}
 
 	public HolderLookup.Provider buildPatch(RegistryAccess registries) {
-		return this.buildPatchedRegistries(registries).patches();
+		return this.buildPatchedRegistries(registries, Optional.empty()).patches();
+	}
+
+	public HolderLookup.Provider buildPatch(RegistryAccess registries, ResourceKey<WorldPreset> worldPresetKey) {
+		return this.buildPatchedRegistries(registries, Optional.of(worldPresetKey)).patches();
 	}
 
 	public HolderLookup.Provider buildFullPatch(RegistryAccess registries) {
-		return materialize(this.buildPatchedRegistries(registries).full());
+		return materialize(this.buildPatchedRegistries(registries, Optional.empty()).full());
 	}
 
 	private static final Set<String> PREVIEW_NAMESPACES = Set.of("minecraft", "reterraforged");
@@ -76,7 +82,7 @@ public record Preset(WorldSettings world, SurfaceSettings surface, CaveSettings 
 		return provider;
 	}
 
-	private RegistrySetBuilder.PatchedRegistries buildPatchedRegistries(RegistryAccess registries) {
+	private RegistrySetBuilder.PatchedRegistries buildPatchedRegistries(RegistryAccess registries, Optional<ResourceKey<WorldPreset>> worldPresetKey) {
 		RegistrySetBuilder builder = new RegistrySetBuilder();
 
 		// 1. Setup Patches
@@ -92,6 +98,11 @@ public record Preset(WorldSettings world, SurfaceSettings surface, CaveSettings 
 			TBNoiseRouterData.bootstrap(ctx);
 		});
 		this.addPatch(builder, Registries.NOISE_SETTINGS, PresetNoiseGeneratorSettings::bootstrap);
+		worldPresetKey.ifPresent(key -> {
+			WorldPreset normal = registries.registryOrThrow(Registries.WORLD_PRESET).getOrThrow(WorldPresets.NORMAL);
+			WorldPreset automatic = new WorldPreset(new LinkedHashMap<>(normal.createWorldDimensions().dimensions()));
+			this.addPatch(builder, Registries.WORLD_PRESET, (preset, ctx) -> ctx.register(key, automatic));
+		});
 
 		// 2. Initialize Cloner and Gatekeeper tracking
 		Cloner.Factory factory = new Cloner.Factory();

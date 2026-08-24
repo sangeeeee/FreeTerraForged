@@ -13,6 +13,8 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
 
+import raccoonman.reterraforged.client.gui.screen.worldselection.AutoPresetManager;
+
 @Mixin(CreateWorldScreen.class)
 public class MixinGuaranteeData {
 
@@ -44,7 +46,10 @@ public class MixinGuaranteeData {
                 Pair<Path, PackRepository> pair = screen.getDataPackSelectionSettings(settings.dataConfiguration());
                 Path datapacksDir = pair.getFirst();
                 PackRepository repository = pair.getSecond();
-                Path presetZip = datapacksDir.resolve("reterraforged-preset.zip");
+                String presetFileName = AutoPresetManager.isAutoPreset(uiState.getWorldType())
+                        ? AutoPresetManager.STAGED_PACK_FILE_NAME
+                        : "reterraforged-preset.zip";
+                Path presetZip = datapacksDir.resolve(presetFileName);
 
                 // Verify the preset file is physically written to disk and non-empty
                 if (Files.exists(presetZip) && Files.size(presetZip) > 0) {
@@ -54,7 +59,7 @@ public class MixinGuaranteeData {
 
                     // Check if repository indexed our pack
                     var targetPack = repository.getAvailablePacks().stream()
-                            .filter(pack -> pack.getId().contains("reterraforged-preset"))
+                            .filter(pack -> pack.getId().contains(presetFileName.substring(0, presetFileName.length() - ".zip".length())))
                             .findFirst();
 
                     if (targetPack.isPresent()) {

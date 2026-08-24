@@ -67,8 +67,10 @@
 		"terrablender.MixinNoiseChunk"
 		],
 		"client": [
+			"MixinCreateWorldScreenAutoPreset",
 			"MixinCreateWorldScreenWorldTab",
 			"MixinGuaranteeData",
+			"MixinWorldTypeEntry",
 			"ScreenInvoker"
 		],
   	"injectors": {
