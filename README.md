@@ -57,6 +57,20 @@ Place the referenced preset in `config/reterraforged/presets`, then enable it. F
 
 The generated datapack and its source/package hashes are stored in `config/reterraforged/cache`. The datapack is regenerated only when the configuration, preset, Minecraft version, mod version, or cached package changes. World seeds are not stored in this cache and remain random by default.
 
+### Select the initial spawn biome
+
+After mod loading completes, ReTerraForged creates `config/reterraforged/spawn_biomes.txt` from all installed vanilla and mod biome resources. When a world is created or loaded, its live registry is synchronized again so world-specific datapack biomes are included before spawn selection. New entries are disabled by default:
+
+```text
+!minecraft:desert
+!minecraft:plains
+!examplemod:custom_biome
+```
+
+Remove `!` from one or more lines to enable them. The mod selects one enabled biome per world/configuration, locates a legal surface or water-level position, and remembers the result. Existing line choices survive registry synchronization; removed biomes disappear and newly added biomes receive `!`. If every line has `!`, or no enabled biome has a legal position, vanilla overworld spawn selection is used.
+
+Biomes used by another loaded dimension can also be selected. A player with no existing player data starts in that dimension; ordinary respawn fallback remains the vanilla overworld spawn.
+
 ---
 
 # Bugs

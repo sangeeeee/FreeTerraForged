@@ -10,6 +10,7 @@ import net.neoforged.bus.api.IEventBus;
 import net.neoforged.fml.ModContainer;
 import net.neoforged.fml.common.Mod;
 import net.neoforged.fml.event.lifecycle.FMLClientSetupEvent;
+import net.neoforged.fml.event.lifecycle.FMLLoadCompleteEvent;
 import net.neoforged.fml.loading.FMLEnvironment;
 import net.neoforged.neoforge.common.world.BiomeModifier;
 import net.neoforged.neoforge.data.event.GatherDataEvent;
@@ -22,6 +23,7 @@ import raccoonman.reterraforged.platform.neoforge.RegistryUtilImpl;
 import raccoonman.reterraforged.neoforge.compat.NeoForgeBiomePreviewIntegrations;
 import raccoonman.reterraforged.world.worldgen.biome.modifier.neoforge.AddModifier;
 import raccoonman.reterraforged.world.worldgen.biome.modifier.neoforge.ReplaceModifier;
+import raccoonman.reterraforged.world.worldgen.spawn.SpawnBiomeConfig;
 
 @Mod(RTFCommon.MOD_ID)
 public class RTFNeoForge {
@@ -47,7 +49,12 @@ public class RTFNeoForge {
 		}
 
 		modEventBus.addListener(RTFNeoForge::gatherData);
+		modEventBus.addListener(RTFNeoForge::loadComplete);
 		RegistryUtilImpl.register(modEventBus);
+	}
+
+	private static void loadComplete(FMLLoadCompleteEvent event) {
+		event.enqueueWork(SpawnBiomeConfig::synchronizeInstalledBiomes);
 	}
 
 	private static void gatherData(GatherDataEvent event) {

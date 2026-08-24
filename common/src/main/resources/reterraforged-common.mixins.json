@@ -21,6 +21,8 @@
 		"MixinSurfaceSystem",
 		"MixinStructure",
 		"MixinMinecraftServer",
+		"MixinPlayerListSpawnBiome",
+		"MixinSpawnBiomeServer",
 		"MixinRegistrySetBuilder$EmptyTagLookup",
 		"MixinSpawnFinder",
 		"MixinClimateSampler",

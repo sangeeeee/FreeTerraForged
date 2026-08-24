@@ -15,6 +15,7 @@ import raccoonman.reterraforged.fabric.compat.FabricBiomePreviewIntegrations;
 import raccoonman.reterraforged.platform.RegistryUtil;
 import raccoonman.reterraforged.registries.RTFRegistries;
 import raccoonman.reterraforged.world.worldgen.biome.modifier.BiomeModifier;
+import raccoonman.reterraforged.world.worldgen.spawn.SpawnBiomeConfig;
 
 public class RTFFabric implements ModInitializer, DataGeneratorEntrypoint {
 
@@ -25,6 +26,7 @@ public class RTFFabric implements ModInitializer, DataGeneratorEntrypoint {
 		RTFFabricNetworking.init();
 
 		RegistryUtil.createDataRegistry(RTFRegistries.BIOME_MODIFIER, BiomeModifier.DIRECT_CODEC, false);
+		SpawnBiomeConfig.synchronizeInstalledBiomes();
 	}
 
 	@Override
