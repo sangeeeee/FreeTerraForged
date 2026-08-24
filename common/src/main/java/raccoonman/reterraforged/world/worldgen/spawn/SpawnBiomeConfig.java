@@ -23,12 +23,16 @@ import raccoonman.reterraforged.platform.ConfigUtil;
 import raccoonman.reterraforged.platform.ModLoaderUtil;
 
 public final class SpawnBiomeConfig {
+	static final int DEFAULT_SEARCH_RADIUS = 16_384;
+	static final int MIN_SEARCH_RADIUS = 1_024;
+	static final int MAX_SEARCH_RADIUS = 65_536;
+	private static final String SEARCH_RADIUS_KEY = "search_radius";
 	private static volatile Set<ResourceLocation> installedBiomes = Set.of();
 
 	private SpawnBiomeConfig() {
 	}
 
-	public static Set<ResourceLocation> synchronize(RegistryAccess registries) {
+	public static Settings synchronize(RegistryAccess registries) {
 		Set<ResourceLocation> available = new HashSet<>(installedBiomes);
 		available.addAll(registries.registryOrThrow(Registries.BIOME).keySet());
 		return synchronize(available);
@@ -46,7 +50,7 @@ public final class SpawnBiomeConfig {
 		RTFCommon.LOGGER.info("Synchronized {} installed biomes to {}", discovered.size(), path());
 	}
 
-	private static Set<ResourceLocation> synchronize(Collection<ResourceLocation> available) {
+	private static Settings synchronize(Collection<ResourceLocation> available) {
 		Path path = path();
 		try {
 			List<String> existing = Files.isRegularFile(path)
@@ -56,10 +60,10 @@ public final class SpawnBiomeConfig {
 			if(!existing.equals(result.lines())) {
 				writeAtomically(path, result.lines());
 			}
-			return result.enabled();
+			return new Settings(result.enabled(), result.searchRadius());
 		} catch (Exception e) {
 			RTFCommon.LOGGER.error("Failed to synchronize spawn biome configuration at {}", path, e);
-			return Set.of();
+			return new Settings(Set.of(), DEFAULT_SEARCH_RADIUS);
 		}
 	}
 
@@ -101,9 +105,10 @@ public final class SpawnBiomeConfig {
 
 	static MergeResult merge(Collection<ResourceLocation> available, List<String> existingLines) {
 		Map<ResourceLocation, Boolean> previous = new HashMap<>();
+		int searchRadius = parseSearchRadius(existingLines);
 		for(String rawLine : existingLines) {
 			String line = rawLine.trim();
-			if(line.isEmpty()) {
+			if(line.isEmpty() || line.startsWith("#") || isSearchRadiusLine(line)) {
 				continue;
 			}
 
@@ -117,7 +122,15 @@ public final class SpawnBiomeConfig {
 
 		List<ResourceLocation> sorted = new ArrayList<>(available);
 		sorted.sort(ResourceLocation::compareTo);
-		List<String> lines = new ArrayList<>(sorted.size());
+		List<String> lines = new ArrayList<>(sorted.size() + 10);
+		lines.add("# ReTerraForged spawn biome configuration");
+		lines.add("# search_radius is measured in Minecraft blocks from the search origin in each dimension.");
+		lines.add("# A larger radius can find rarer or more distant biomes, but makes initial world loading slower.");
+		lines.add("# Valid range: " + MIN_SEARCH_RADIUS + " - " + MAX_SEARCH_RADIUS + "; default: " + DEFAULT_SEARCH_RADIUS);
+		lines.add(SEARCH_RADIUS_KEY + "=" + searchRadius);
+		lines.add("# Remove ! from a biome line to enable it; add ! to disable it.");
+		lines.add("# If every biome has !, Minecraft's normal overworld spawn selection is used.");
+		lines.add("");
 		Set<ResourceLocation> enabled = new HashSet<>();
 		for(ResourceLocation location : sorted) {
 			boolean selected = previous.getOrDefault(location, false);
@@ -128,7 +141,29 @@ public final class SpawnBiomeConfig {
 				lines.add("!" + location);
 			}
 		}
-		return new MergeResult(Set.copyOf(enabled), List.copyOf(lines));
+		return new MergeResult(Set.copyOf(enabled), searchRadius, List.copyOf(lines));
+	}
+
+	private static int parseSearchRadius(List<String> lines) {
+		int radius = DEFAULT_SEARCH_RADIUS;
+		for(String rawLine : lines) {
+			String line = rawLine.trim();
+			if(!isSearchRadiusLine(line)) {
+				continue;
+			}
+			String value = line.substring(line.indexOf('=') + 1).trim();
+			try {
+				radius = Integer.parseInt(value);
+			} catch(NumberFormatException ignored) {
+				radius = DEFAULT_SEARCH_RADIUS;
+			}
+		}
+		return Math.max(MIN_SEARCH_RADIUS, Math.min(MAX_SEARCH_RADIUS, radius));
+	}
+
+	private static boolean isSearchRadiusLine(String line) {
+		int separator = line.indexOf('=');
+		return separator >= 0 && SEARCH_RADIUS_KEY.equalsIgnoreCase(line.substring(0, separator).trim());
 	}
 
 	private static void writeAtomically(Path path, List<String> lines) throws IOException {
@@ -144,6 +179,9 @@ public final class SpawnBiomeConfig {
 		}
 	}
 
-	static record MergeResult(Set<ResourceLocation> enabled, List<String> lines) {
+	public record Settings(Set<ResourceLocation> enabledBiomes, int searchRadius) {
+	}
+
+	static record MergeResult(Set<ResourceLocation> enabled, int searchRadius, List<String> lines) {
 	}
 }

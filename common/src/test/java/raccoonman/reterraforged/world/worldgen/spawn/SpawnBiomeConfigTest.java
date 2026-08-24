@@ -25,11 +25,20 @@ class SpawnBiomeConfigTest {
 
 		SpawnBiomeConfig.MergeResult result = SpawnBiomeConfig.merge(
 				List.of(plains, modded, desert),
-				List.of("minecraft:plains", "!minecraft:desert", "!removed:old_biome")
+				List.of("search_radius=32768", "minecraft:plains", "!minecraft:desert", "!removed:old_biome")
 		);
 
 		assertEquals(Set.of(plains), result.enabled());
+		assertEquals(32768, result.searchRadius());
 		assertEquals(List.of(
+				"# ReTerraForged spawn biome configuration",
+				"# search_radius is measured in Minecraft blocks from the search origin in each dimension.",
+				"# A larger radius can find rarer or more distant biomes, but makes initial world loading slower.",
+				"# Valid range: 1024 - 65536; default: 16384",
+				"search_radius=32768",
+				"# Remove ! from a biome line to enable it; add ! to disable it.",
+				"# If every biome has !, Minecraft's normal overworld spawn selection is used.",
+				"",
 				"!example:crystal_fields",
 				"!minecraft:desert",
 				"minecraft:plains"
@@ -45,7 +54,20 @@ class SpawnBiomeConfigTest {
 		);
 
 		assertEquals(Set.of(), result.enabled());
-		assertEquals(List.of("!minecraft:plains"), result.lines());
+		assertEquals(SpawnBiomeConfig.DEFAULT_SEARCH_RADIUS, result.searchRadius());
+		assertEquals("search_radius=16384", result.lines().get(4));
+		assertEquals("!minecraft:plains", result.lines().get(result.lines().size() - 1));
+	}
+
+	@Test
+	void searchRadiusIsClampedAndInvalidValuesUseTheDefault() {
+		SpawnBiomeConfig.MergeResult tooLarge = SpawnBiomeConfig.merge(List.of(), List.of("search_radius=999999"));
+		SpawnBiomeConfig.MergeResult tooSmall = SpawnBiomeConfig.merge(List.of(), List.of("search_radius=1"));
+		SpawnBiomeConfig.MergeResult invalid = SpawnBiomeConfig.merge(List.of(), List.of("search_radius=far"));
+
+		assertEquals(SpawnBiomeConfig.MAX_SEARCH_RADIUS, tooLarge.searchRadius());
+		assertEquals(SpawnBiomeConfig.MIN_SEARCH_RADIUS, tooSmall.searchRadius());
+		assertEquals(SpawnBiomeConfig.DEFAULT_SEARCH_RADIUS, invalid.searchRadius());
 	}
 
 	@Test
