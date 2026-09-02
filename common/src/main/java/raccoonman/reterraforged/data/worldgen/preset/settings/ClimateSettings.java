@@ -81,6 +81,11 @@ public class ClimateSettings {
             module = Noises.clamp(module, min, max);
             return module;
         }
+
+        public float apply(float value) {
+            float biased = value + this.getBias() / 2.0F;
+            return NoiseUtil.clamp(biased, this.getMin(), this.getMax());
+        }
         
         public RangeValue copy() {
         	return new RangeValue(this.seedOffset, this.scale, this.falloff, this.min, this.max, this.bias);

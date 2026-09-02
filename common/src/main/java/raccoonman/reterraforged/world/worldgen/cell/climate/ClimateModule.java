@@ -27,6 +27,7 @@ public class ClimateModule {
 	private Noise warpX;
 	private Noise warpZ;
 	private Noise moisture;
+	private ClimateSettings.RangeValue moistureSettings;
 	private Noise temperature;
 	private Noise macroBiomeNoise;
 	private Continent continent;
@@ -69,10 +70,10 @@ public class ClimateModule {
 		moistureSource = Noises.frequency(moistureSource, 0.5F, 1.0F);
 		
 		Noise moisture = new LegacyMoisture(moistureSource, climateSettings.moisture.falloff);
-		moisture = climateSettings.moisture.apply(moisture);
 		moisture = Noises.warpPerlin(moisture, moistureSeed.next(), Math.max(1, moistScale / 2), 1, moistScale / 4.0F);
 		moisture = Noises.warpPerlin(moisture, moistureSeed.next(), Math.max(1, moistScale / 6), 2, moistScale / 12.0F);
 		this.moisture = moisture;
+		this.moistureSettings = climateSettings.moisture.copy();
 		
 		Seed tempSeed = seed.offset(climateSettings.temperature.seedOffset);
 		Noise temperature = new LegacyTemperature(1.0F / tempScale, climateSettings.temperature.falloff);
@@ -126,23 +127,21 @@ public class ClimateModule {
 			}
 		}
 		cell.biomeRegionId = this.cellValue(this.seed , cellX, cellZ);
-		cell.regionMoisture = this.moisture.compute(centerX, centerZ, 0);
 		cell.regionTemperature = this.temperature.compute(centerX, centerZ, 0);
 		cell.macroBiomeId = this.macroBiomeNoise.compute(centerX, centerZ, 0);
 		int posX = NoiseUtil.floor(centerX / this.biomeFreq);
 		int posZ = NoiseUtil.floor(centerZ / this.biomeFreq);
-		float continentEdge = this.continent.getLandValue(posX, posZ);
+		float regionContinentEdge = this.continent.getLandValue(posX, posZ);
 		if (mask) {
 			cell.biomeRegionEdge = this.edgeValue(edgeDistance, edgeDistance2);
-			this.modifyTerrain(cell, continentEdge);
+			this.modifyTerrain(cell, regionContinentEdge);
 		}
-		cell.regionMoisture = this.modifyMoisture(cell.regionMoisture, continentEdge);
+		cell.regionMoisture = this.sampleMoisture(centerX, centerZ, cell.continentEdge);
 
 		cell.regionTemperature = this.modifyTemp(cell.height, cell.regionTemperature, originalX, originalZ);
 
 		float queryTemp = this.temperature.compute(x, z, 0);
-		float queryMoist = this.moisture.compute(x, z, 0);
-		queryMoist = this.modifyMoisture(queryMoist, continentEdge);
+		float queryMoist = this.sampleMoisture(x, z, cell.continentEdge);
 		queryTemp = this.modifyTemp(cell.height, queryTemp, originalX, originalZ);
 		cell.temperature = queryTemp * 2.0F - 1.0F;
 		cell.moisture = queryMoist * 2.0F - 1.0F;
@@ -152,8 +151,7 @@ public class ClimateModule {
 			float mtnFreqZ = cell.terrainRegionCenterZ * this.biomeFreq;
 
 			float mtnTemp = this.temperature.compute(mtnFreqX, mtnFreqZ, 0);
-			float mtnMoist = this.moisture.compute(mtnFreqX, mtnFreqZ, 0);
-			mtnMoist = this.modifyMoisture(mtnMoist, continentEdge);
+			float mtnMoist = this.sampleMoisture(mtnFreqX, mtnFreqZ, cell.continentEdge);
 			mtnTemp = this.modifyTemp(cell.height, mtnTemp, originalX, originalZ);
 			cell.temperature = mtnTemp * 2.0F - 1.0F;
 			cell.moisture = mtnMoist * 2.0F - 1.0F;
@@ -164,8 +162,7 @@ public class ClimateModule {
 			if (madeMushroomIslands(cell)){ return; }
 
 			float islTemp = this.temperature.compute(centerX, centerZ, 0);
-			float islMoist = this.moisture.compute(centerX, centerZ, 0);
-			islMoist = this.modifyMoisture(islMoist, continentEdge);
+			float islMoist = this.sampleMoisture(centerX, centerZ, cell.continentEdge);
 			islTemp = this.modifyTemp(cell.height, islTemp, originalX, originalZ);
 			cell.temperature = islTemp * 2.0F - 1.0F;
 			cell.moisture = islMoist * 2.0F - 1.0F;
@@ -202,7 +199,15 @@ public class ClimateModule {
 		return temp;
 	}
 
-	private float modifyMoisture(float moisture, float continentEdge) {
+	private float sampleMoisture(float x, float z, float continentEdge) {
+		return applyMoisturePreset(this.moisture.compute(x, z, 0), continentEdge, this.moistureSettings);
+	}
+
+	static float applyMoisturePreset(float moisture, float continentEdge, ClimateSettings.RangeValue settings) {
+		return settings.apply(modifyMoisture(moisture, continentEdge));
+	}
+
+	private static float modifyMoisture(float moisture, float continentEdge) {
 		float limit = 0.75F;
 		float range = 1.0F - limit;
 		if (continentEdge < limit) {
