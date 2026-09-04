@@ -58,7 +58,8 @@ public final class SpawnBiomeSelector {
 		SpawnBiomeConfig.Settings config = SpawnBiomeConfig.synchronize(server.registryAccess());
 		Set<ResourceLocation> configured = config.enabledBiomes();
 		int searchRadius = config.searchRadius();
-		String fingerprint = fingerprint(configured, searchRadius);
+		SpawnCondition condition = config.condition();
+		String fingerprint = fingerprint(configured, searchRadius, condition);
 		SpawnBiomeSelectionData data = overworld.getDataStorage().computeIfAbsent(
 				SpawnBiomeSelectionData.FACTORY,
 				SpawnBiomeSelectionData.DATA_NAME
@@ -75,11 +76,11 @@ public final class SpawnBiomeSelector {
 		}
 
 		SpawnTarget target = data.matches(fingerprint) ? data.target() : null;
-		if(target != null && !isStillValid(server, target, configured)) {
+		if(target != null && !isStillValid(server, target, configured, condition)) {
 			target = null;
 		}
 		if(target == null) {
-			target = findTarget(server, configured, data.originalSpawn(), searchRadius);
+			target = findTarget(server, configured, data.originalSpawn(), searchRadius, condition);
 		}
 
 		if(target == null) {
@@ -126,7 +127,7 @@ public final class SpawnBiomeSelector {
 		player.moveTo(position.getX() + 0.5D, position.getY(), position.getZ() + 0.5D, player.getYRot(), player.getXRot());
 	}
 
-	private static SpawnTarget findTarget(MinecraftServer server, Set<ResourceLocation> configured, BlockPos overworldOrigin, int searchRadius) {
+	private static SpawnTarget findTarget(MinecraftServer server, Set<ResourceLocation> configured, BlockPos overworldOrigin, int searchRadius, SpawnCondition condition) {
 		List<DimensionSearch> dimensions = dimensionsWithEnabledBiomes(server, configured);
 		Set<ResourceLocation> available = dimensions.stream()
 				.flatMap(dimension -> dimension.biomes().stream())
@@ -138,12 +139,13 @@ public final class SpawnBiomeSelector {
 						"Enabled spawn biome {} is not used by any loaded dimension and will be ignored",
 						id
 				));
-		long seed = server.overworld().getSeed() ^ fingerprint(configured, searchRadius).hashCode() ^ 0x525446535041574EL;
+		long seed = server.overworld().getSeed() ^ fingerprint(configured, searchRadius, condition).hashCode() ^ 0x525446535041574EL;
 		RandomSource random = RandomSource.create(seed);
 		RTFCommon.LOGGER.info(
-				"Searching up to {} blocks from each dimension origin for a legal spawn in any of {} enabled biomes",
+				"Searching up to {} blocks from each dimension origin for a legal spawn in any of {} enabled biomes with condition {}",
 				searchRadius,
-				configured.size()
+				configured.size(),
+				condition.canonical()
 		);
 
 		while(!dimensions.isEmpty()) {
@@ -152,7 +154,7 @@ public final class SpawnBiomeSelector {
 			BlockPos origin = level.dimension().equals(Level.OVERWORLD)
 					? overworldOrigin
 					: new BlockPos(0, level.getChunkSource().getGenerator().getSeaLevel(), 0);
-			LocatedSpawn located = locateSurfaceSpawn(level, dimension.biomes(), origin, searchRadius, random);
+			LocatedSpawn located = locateSurfaceSpawn(level, dimension.biomes(), origin, searchRadius, random, condition);
 			if(located != null) {
 				return new SpawnTarget(level.dimension(), located.biome(), located.position());
 			}
@@ -186,7 +188,7 @@ public final class SpawnBiomeSelector {
 		throw new IllegalStateException("Failed to choose an enabled spawn dimension");
 	}
 
-	private static LocatedSpawn locateSurfaceSpawn(ServerLevel level, Set<ResourceKey<Biome>> enabled, BlockPos origin, int searchRadius, RandomSource random) {
+	private static LocatedSpawn locateSurfaceSpawn(ServerLevel level, Set<ResourceKey<Biome>> enabled, BlockPos origin, int searchRadius, RandomSource random, SpawnCondition condition) {
 		BiomeSource source = level.getChunkSource().getGenerator().getBiomeSource();
 		RandomState randomState = level.getChunkSource().randomState();
 		Predicate<Holder<Biome>> predicate = holder -> holder.unwrapKey().filter(enabled::contains).isPresent();
@@ -205,7 +207,7 @@ public final class SpawnBiomeSelector {
 			);
 			if(randomMatch != null) {
 				foundBiomeSample = true;
-				LocatedSpawn safe = findSafeNear(level, enabled, randomMatch.getFirst(), random);
+				LocatedSpawn safe = findSafeNear(level, enabled, randomMatch.getFirst(), random, condition);
 				if(safe != null) {
 					return safe;
 				}
@@ -217,7 +219,7 @@ public final class SpawnBiomeSelector {
 			);
 			if(nearest != null) {
 				foundBiomeSample = true;
-				LocatedSpawn safe = findSafeNear(level, enabled, nearest.getFirst(), random);
+				LocatedSpawn safe = findSafeNear(level, enabled, nearest.getFirst(), random, condition);
 				if(safe != null) {
 					return safe;
 				}
@@ -240,15 +242,15 @@ public final class SpawnBiomeSelector {
 		return null;
 	}
 
-	private static LocatedSpawn findSafeNear(ServerLevel level, Set<ResourceKey<Biome>> enabled, BlockPos located, RandomSource random) {
-		LocatedSpawn exact = findSafeInColumn(level, enabled, located.getX(), located.getY(), located.getZ());
+	private static LocatedSpawn findSafeNear(ServerLevel level, Set<ResourceKey<Biome>> enabled, BlockPos located, RandomSource random, SpawnCondition condition) {
+		LocatedSpawn exact = findSafeInColumn(level, enabled, located.getX(), located.getY(), located.getZ(), condition);
 		if(exact != null) {
 			return exact;
 		}
 		for(int attempt = 0; attempt < LOCAL_ATTEMPTS; attempt++) {
 			int x = located.getX() + random.nextInt(LOCAL_RADIUS * 2 + 1) - LOCAL_RADIUS;
 			int z = located.getZ() + random.nextInt(LOCAL_RADIUS * 2 + 1) - LOCAL_RADIUS;
-			LocatedSpawn safe = findSafeInColumn(level, enabled, x, located.getY(), z);
+			LocatedSpawn safe = findSafeInColumn(level, enabled, x, located.getY(), z, condition);
 			if(safe != null) {
 				return safe;
 			}
@@ -256,7 +258,7 @@ public final class SpawnBiomeSelector {
 		return null;
 	}
 
-	private static LocatedSpawn findSafeInColumn(ServerLevel level, Set<ResourceKey<Biome>> enabled, int x, int locatedY, int z) {
+	private static LocatedSpawn findSafeInColumn(ServerLevel level, Set<ResourceKey<Biome>> enabled, int x, int locatedY, int z, SpawnCondition condition) {
 		if(level.dimensionType().hasCeiling()) {
 			int minY = level.getMinBuildHeight() + 1;
 			int maxY = level.getMaxBuildHeight() - 2;
@@ -264,7 +266,7 @@ public final class SpawnBiomeSelector {
 			for(int y = startY; y >= minY; y--) {
 				BlockPos position = new BlockPos(x, y, z);
 				ResourceKey<Biome> biome = enabledBiomeAt(level, position, enabled);
-				if(biome != null && isSafe(level, position, false)) {
+				if(biome != null && isSafe(level, position, false) && condition.test(level, position)) {
 					return new LocatedSpawn(biome, position);
 				}
 			}
@@ -274,7 +276,9 @@ public final class SpawnBiomeSelector {
 		int y = level.getHeight(Heightmap.Types.MOTION_BLOCKING_NO_LEAVES, x, z);
 		BlockPos position = new BlockPos(x, y, z);
 		ResourceKey<Biome> biome = enabledBiomeAt(level, position, enabled);
-		return biome != null && isSafe(level, position, true) ? new LocatedSpawn(biome, position) : null;
+		return biome != null && isSafe(level, position, true) && condition.test(level, position)
+				? new LocatedSpawn(biome, position)
+				: null;
 	}
 
 	private static ResourceKey<Biome> enabledBiomeAt(ServerLevel level, BlockPos position, Set<ResourceKey<Biome>> enabled) {
@@ -323,7 +327,7 @@ public final class SpawnBiomeSelector {
 		return level.getBiome(position).unwrapKey().filter(target::equals).isPresent();
 	}
 
-	private static boolean isStillValid(MinecraftServer server, SpawnTarget target, Set<ResourceLocation> configured) {
+	private static boolean isStillValid(MinecraftServer server, SpawnTarget target, Set<ResourceLocation> configured, SpawnCondition condition) {
 		if(!configured.contains(target.biome().location())) {
 			return false;
 		}
@@ -332,13 +336,15 @@ public final class SpawnBiomeSelector {
 				&& level.getChunkSource().getGenerator().getBiomeSource().possibleBiomes().stream()
 						.anyMatch(holder -> holder.unwrapKey().filter(target.biome()::equals).isPresent())
 				&& matchesBiome(level, target.position(), target.biome())
-				&& isSafe(level, target.position(), !level.dimensionType().hasCeiling());
+				&& isSafe(level, target.position(), !level.dimensionType().hasCeiling())
+				&& condition.test(level, target.position());
 	}
 
-	private static String fingerprint(Set<ResourceLocation> configured, int searchRadius) {
+	private static String fingerprint(Set<ResourceLocation> configured, int searchRadius, SpawnCondition condition) {
 		try {
 			MessageDigest digest = MessageDigest.getInstance("SHA-256");
 			digest.update(("search_radius=" + searchRadius + '\n').getBytes(StandardCharsets.UTF_8));
+			digest.update(("spawn_condition=" + condition.canonical() + '\n').getBytes(StandardCharsets.UTF_8));
 			configured.stream().sorted().forEach(location -> {
 				digest.update(location.toString().getBytes(StandardCharsets.UTF_8));
 				digest.update((byte) '\n');

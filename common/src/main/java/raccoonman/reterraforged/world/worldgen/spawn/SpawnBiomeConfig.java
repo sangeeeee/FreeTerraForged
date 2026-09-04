@@ -27,6 +27,7 @@ public final class SpawnBiomeConfig {
 	static final int MIN_SEARCH_RADIUS = 1_024;
 	static final int MAX_SEARCH_RADIUS = 65_536;
 	private static final String SEARCH_RADIUS_KEY = "search_radius";
+	private static final String SPAWN_CONDITION_KEY = "spawn_condition";
 	private static volatile Set<ResourceLocation> installedBiomes = Set.of();
 
 	private SpawnBiomeConfig() {
@@ -60,10 +61,10 @@ public final class SpawnBiomeConfig {
 			if(!existing.equals(result.lines())) {
 				writeAtomically(path, result.lines());
 			}
-			return new Settings(result.enabled(), result.searchRadius());
+			return new Settings(result.enabled(), result.searchRadius(), result.condition());
 		} catch (Exception e) {
 			RTFCommon.LOGGER.error("Failed to synchronize spawn biome configuration at {}", path, e);
-			return new Settings(Set.of(), DEFAULT_SEARCH_RADIUS);
+			return new Settings(Set.of(), DEFAULT_SEARCH_RADIUS, SpawnCondition.TRUE);
 		}
 	}
 
@@ -106,9 +107,10 @@ public final class SpawnBiomeConfig {
 	static MergeResult merge(Collection<ResourceLocation> available, List<String> existingLines) {
 		Map<ResourceLocation, Boolean> previous = new HashMap<>();
 		int searchRadius = parseSearchRadius(existingLines);
+		SpawnCondition condition = parseCondition(existingLines);
 		for(String rawLine : existingLines) {
 			String line = rawLine.trim();
-			if(line.isEmpty() || line.startsWith("#") || isSearchRadiusLine(line)) {
+			if(line.isEmpty() || line.startsWith("#") || isSettingLine(line)) {
 				continue;
 			}
 
@@ -122,12 +124,20 @@ public final class SpawnBiomeConfig {
 
 		List<ResourceLocation> sorted = new ArrayList<>(available);
 		sorted.sort(ResourceLocation::compareTo);
-		List<String> lines = new ArrayList<>(sorted.size() + 10);
+		List<String> lines = new ArrayList<>(sorted.size() + 18);
 		lines.add("# ReTerraForged spawn biome configuration");
 		lines.add("# search_radius is measured in Minecraft blocks from the search origin in each dimension.");
 		lines.add("# A larger radius can find rarer or more distant biomes, but makes initial world loading slower.");
 		lines.add("# Valid range: " + MIN_SEARCH_RADIUS + " - " + MAX_SEARCH_RADIUS + "; default: " + DEFAULT_SEARCH_RADIUS);
 		lines.add(SEARCH_RADIUS_KEY + "=" + searchRadius);
+		lines.add("# spawn_condition is ANDed with the enabled biome and normal spawn safety checks.");
+		lines.add("# Boolean grammar: true | false | and(expr,...) | or(expr,...) | not(expr)");
+		lines.add("# Positions for block/fluid checks: floor (below the player), feet, or head.");
+		lines.add("# Predicates: block[_tag](position,id), fluid[_tag](position,id), biome[_tag](id),");
+		lines.add("#             dimension(id), dimension_type[_tag](id)");
+		lines.add("# IDs and tags use namespace:path and may be supplied by Minecraft, data packs, or mods.");
+		lines.add("# Soil example: or(block_tag(floor,minecraft:dirt),block_tag(floor,minecraft:sand))");
+		lines.add(SPAWN_CONDITION_KEY + "=" + condition.canonical());
 		lines.add("# Remove ! from a biome line to enable it; add ! to disable it.");
 		lines.add("# If every biome has !, Minecraft's normal overworld spawn selection is used.");
 		lines.add("");
@@ -141,7 +151,20 @@ public final class SpawnBiomeConfig {
 				lines.add("!" + location);
 			}
 		}
-		return new MergeResult(Set.copyOf(enabled), searchRadius, List.copyOf(lines));
+		return new MergeResult(Set.copyOf(enabled), searchRadius, condition, List.copyOf(lines));
+	}
+
+	private static SpawnCondition parseCondition(List<String> lines) {
+		SpawnCondition condition = SpawnCondition.TRUE;
+		for(String rawLine : lines) {
+			String line = rawLine.trim();
+			if(!isConditionLine(line)) {
+				continue;
+			}
+			String value = line.substring(line.indexOf('=') + 1).trim();
+			condition = SpawnCondition.parse(value);
+		}
+		return condition;
 	}
 
 	private static int parseSearchRadius(List<String> lines) {
@@ -166,6 +189,15 @@ public final class SpawnBiomeConfig {
 		return separator >= 0 && SEARCH_RADIUS_KEY.equalsIgnoreCase(line.substring(0, separator).trim());
 	}
 
+	private static boolean isConditionLine(String line) {
+		int separator = line.indexOf('=');
+		return separator >= 0 && SPAWN_CONDITION_KEY.equalsIgnoreCase(line.substring(0, separator).trim());
+	}
+
+	private static boolean isSettingLine(String line) {
+		return isSearchRadiusLine(line) || isConditionLine(line);
+	}
+
 	private static void writeAtomically(Path path, List<String> lines) throws IOException {
 		Files.createDirectories(path.getParent());
 		Path temporary = path.resolveSibling(path.getFileName() + ".tmp");
@@ -179,9 +211,9 @@ public final class SpawnBiomeConfig {
 		}
 	}
 
-	public record Settings(Set<ResourceLocation> enabledBiomes, int searchRadius) {
+	public record Settings(Set<ResourceLocation> enabledBiomes, int searchRadius, SpawnCondition condition) {
 	}
 
-	static record MergeResult(Set<ResourceLocation> enabled, int searchRadius, List<String> lines) {
+	static record MergeResult(Set<ResourceLocation> enabled, int searchRadius, SpawnCondition condition, List<String> lines) {
 	}
 }

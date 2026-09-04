@@ -1,6 +1,7 @@
 package raccoonman.reterraforged.world.worldgen.spawn;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 
 import java.io.IOException;
 import java.nio.file.Files;
@@ -30,12 +31,21 @@ class SpawnBiomeConfigTest {
 
 		assertEquals(Set.of(plains), result.enabled());
 		assertEquals(32768, result.searchRadius());
+		assertEquals("true", result.condition().canonical());
 		assertEquals(List.of(
 				"# ReTerraForged spawn biome configuration",
 				"# search_radius is measured in Minecraft blocks from the search origin in each dimension.",
 				"# A larger radius can find rarer or more distant biomes, but makes initial world loading slower.",
 				"# Valid range: 1024 - 65536; default: 16384",
 				"search_radius=32768",
+				"# spawn_condition is ANDed with the enabled biome and normal spawn safety checks.",
+				"# Boolean grammar: true | false | and(expr,...) | or(expr,...) | not(expr)",
+				"# Positions for block/fluid checks: floor (below the player), feet, or head.",
+				"# Predicates: block[_tag](position,id), fluid[_tag](position,id), biome[_tag](id),",
+				"#             dimension(id), dimension_type[_tag](id)",
+				"# IDs and tags use namespace:path and may be supplied by Minecraft, data packs, or mods.",
+				"# Soil example: or(block_tag(floor,minecraft:dirt),block_tag(floor,minecraft:sand))",
+				"spawn_condition=true",
 				"# Remove ! from a biome line to enable it; add ! to disable it.",
 				"# If every biome has !, Minecraft's normal overworld spawn selection is used.",
 				"",
@@ -56,7 +66,35 @@ class SpawnBiomeConfigTest {
 		assertEquals(Set.of(), result.enabled());
 		assertEquals(SpawnBiomeConfig.DEFAULT_SEARCH_RADIUS, result.searchRadius());
 		assertEquals("search_radius=16384", result.lines().get(4));
+		assertEquals("spawn_condition=true", result.lines().get(12));
 		assertEquals("!minecraft:plains", result.lines().get(result.lines().size() - 1));
+	}
+
+	@Test
+	void spawnConditionIsPreservedAndCanonicalized() {
+		ResourceLocation plains = ResourceLocation.parse("minecraft:plains");
+		SpawnBiomeConfig.MergeResult result = SpawnBiomeConfig.merge(
+				List.of(plains),
+				List.of(
+						"spawn_condition = AND( block_tag( floor, minecraft:dirt ), NOT( biome_tag(minecraft:is_ocean) ) )",
+						"minecraft:plains"
+				)
+		);
+
+		assertEquals(
+				"and(block_tag(floor,minecraft:dirt),not(biome_tag(minecraft:is_ocean)))",
+				result.condition().canonical()
+		);
+		assertEquals("spawn_condition=" + result.condition().canonical(), result.lines().get(12));
+		assertEquals(Set.of(plains), result.enabled());
+	}
+
+	@Test
+	void invalidSpawnConditionCannotSilentlyRemoveTheRestriction() {
+		assertThrows(IllegalArgumentException.class, () -> SpawnBiomeConfig.merge(
+				List.of(ResourceLocation.parse("minecraft:plains")),
+				List.of("spawn_condition=or(block_tag(floor,minecraft:dirt)")
+		));
 	}
 
 	@Test
